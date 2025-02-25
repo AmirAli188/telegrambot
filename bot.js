@@ -11,6 +11,7 @@ const ftpClient = require("ftp")
 const client = new ftpClient()
 const db = require('./db');
 
+
 function resetConnection() {
     client.end(); 
     client.connect(config); 
@@ -32,8 +33,8 @@ async function uploatToFtp(pathToUpload , data) {
 async function downloadPlaylistAndVideo(url) {
     try {
         const folder = `downloads/${Date.now()}`
-        await ytdlW.execPromise([
-            url , '-P' , folder , '-o','%(playlist_index)s-%(title)s.%(ext)s' , '--yes-playlist'
+        await ytdlW.execPromise(["--cookies-from-browser" , "firefox",
+            url , '-P' , folder , '-o','%(playlist_index)s-%(title)s.%(ext)s' , '--yes-playlist',
         ] , {timeout : 0})
         return folder;
         
@@ -43,7 +44,7 @@ async function downloadPlaylistAndVideo(url) {
 }
 async function validateUrl(url){
    try {    
-    const output =  await ytdlW.execPromise([ url , '--print' , '%(id)s' ,
+    const output =  await ytdlW.execPromise(["--cookies-from-browser" , "firefox" ,  url , '--print' , '%(id)s' ,
         '--quiet' , '--no-warnings'])
         
         if(!output.trim()) return false
@@ -120,12 +121,26 @@ async function addUser(userID) {
         })
     })
 }
+
+client.on("ready", () => {
+    // Periodically send a NOOP command to keep the connection alive
+    setInterval(() => {
+        client.pwd((err, currentDir) => {
+            if (err) console.error("Error sending keep-alive command:", err);
+            else console.log("Keep-alive command sent, current directory:", currentDir);
+        });
+    }, 300000); // Send NOOP every 5 minutes (300000 ms)
+});
+
+// Your existing connection and upload logic here
+
 client.on("error", (err) => {
     if (err) {
-      if (err.message.includes("No transfer timeout")) {
-        resetConnection();
-      }
+        if (err.message.includes("No transfer timeout")) {
+            resetConnection();
+        }
     }
+    
 });
   
 
@@ -162,28 +177,32 @@ bot.on('callback_query' ,async (ctx)=>{
 bot.launch()
 
 
-bot.on("text" , async (ctx)=>{
-    try {  
+try {
+    bot.on("text" , async (ctx)=>{
+        
         const buttons = await createJoiningChannelMessage(ctx)
         if(buttons.length > 0){
             return await ctx.reply("join these channels" , {reply_markup : {inline_keyboard : buttons}})
         }
-      const url  = ctx.message.text      
-    const processingMessage = await ctx.reply("processing")
-    const validation = await validateUrl(url)
-    await ctx.telegram.deleteMessage(ctx.chat.id , processingMessage.message_id)
-    if(!validation) return ctx.reply("please enter a valid url")
-    const downloadingMessage = await ctx.reply("downloading...")
-     await ctx.replyWithChatAction("upload_document")
-    const folderPath =await downloadPlaylistAndVideo(url)
-    await ctx.telegram.deleteMessage(ctx.chat.id , downloadingMessage.message_id)
-    const uploadingMessage = await ctx.reply(" uploading videos to the server...")
-    await Upload(folderPath , ctx)
-    await ctx.telegram.deleteMessage(ctx.chat.id , uploadingMessage.message_id)
+        const url  = ctx.message.text      
+        const processingMessage = await ctx.reply("processing").catch((err)=>{console.log(err);})
+        const validation = await validateUrl(url)
+        await ctx.telegram.deleteMessage(ctx.chat.id , processingMessage.message_id).catch((err)=>{console.log(err);})
+        if(!validation) return ctx.reply("please enter a valid url").catch((err)=>{console.log(err);})
+        const downloadingMessage = await ctx.reply("downloading...").catch((err)=>{console.log(err);})
+        await ctx.replyWithChatAction("upload_document").catch((err)=>{console.log(err);})
+        const folderPath =await downloadPlaylistAndVideo(url)
+        await ctx.telegram.deleteMessage(ctx.chat.id , downloadingMessage.message_id).catch((err)=>{console.log(err);})
+        const uploadingMessage = await ctx.reply(" uploading videos to the server...").catch((err)=>{console.log(err);})
+        await Upload(folderPath , ctx)
+        await ctx.telegram.deleteMessage(ctx.chat.id , uploadingMessage.message_id).catch((err)=>{console.log(err);})
 
-    } catch (error) {
-        ctx.reply("Internal Server Error , try again later")
-        console.log(error);
-        
-    }
-})
+    
+    })
+    bot.catch(async(err , ctx)=>{
+        await ctx.reply("an error occured , try again later")
+    })
+} catch (error) {
+    console.log("internal server error");
+    
+}
