@@ -25,7 +25,15 @@ async function uploatToFtp(pathToUpload , data) {
             }else{
                 resolve()
             }
-        })
+        });
+        client.on("error", (err) => {
+            if (err) {
+                if (err.message.includes("No transfer timeout")) {
+                    resetConnection();
+                }
+            }
+            
+        });
 
     })
   
@@ -33,7 +41,7 @@ async function uploatToFtp(pathToUpload , data) {
 async function downloadPlaylistAndVideo(url) {
     try {
         const folder = `downloads/${Date.now()}`
-        await ytdlW.execPromise(["--cookies-from-browser" , "firefox",
+        await ytdlW.execPromise([
             url , '-P' , folder , '-o','%(playlist_index)s-%(title)s.%(ext)s' , '--yes-playlist',
         ] , {timeout : 0})
         return folder;
@@ -44,7 +52,7 @@ async function downloadPlaylistAndVideo(url) {
 }
 async function validateUrl(url){
    try {    
-    const output =  await ytdlW.execPromise(["--cookies-from-browser" , "firefox" ,  url , '--print' , '%(id)s' ,
+    const output =  await ytdlW.execPromise([  url , '--print' , '%(id)s' ,
         '--quiet' , '--no-warnings'])
         
         if(!output.trim()) return false
@@ -129,7 +137,7 @@ client.on("ready", () => {
             if (err) console.error("Error sending keep-alive command:", err);
             else console.log("Keep-alive command sent, current directory:", currentDir);
         });
-    }, 300000); // Send NOOP every 5 minutes (300000 ms)
+    }, 120000); // Send NOOP every 2 minutes (300000 ms)
 });
 
 // Your existing connection and upload logic here
